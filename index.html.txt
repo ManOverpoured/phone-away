@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phone Away - Stay Present</title>
+  <meta name="description" content="Stay present with friends. A fun game to keep phones put away during hangouts.">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.0/firebase-app-compat.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.0/firebase-database-compat.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyBCiTEYtzDQAtbaPJH73xf6Onrl6PeyNBY",
+      authDomain: "phone-away-2525f.firebaseapp.com",
+      databaseURL: "https://phone-away-2525f-default-rtdb.firebaseio.com",
+      projectId: "phone-away-2525f",
+      storageBucket: "phone-away-2525f.firebasestorage.app",
+      messagingSenderId: "706810302576",
+      appId: "1:706810302576:web:e52ad0fda38b848123e4b5"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // State
+    const state = {
+      view: 'home',
+      username: '',
+      groupCode: '',
