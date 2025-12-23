@@ -27,8 +27,450 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // State
     const state = {
       view: 'home',
       username: '',
       groupCode: '',
+      userId: 'user_' + Math.random().toString(36).substr(2, 9),
+      session: null,
+      countdown: 5,
+      timeRemaining: 0,
+      bustedUser: null,
+      audioContext: null
+    };
+
+    const alarmOptions = [
+      { value: 'police', label: '🚨 Police Siren' },
+      { value: 'tornado', label: '🌪️ Tornado Alarm' },
+      { value: 'hockey', label: '🏒 Hockey Buzzer' },
+      { value: 'busted', label: '🗣️ BUSTED!' },
+      { value: 'glass', label: '💥 Glass Shatter' },
+      { value: 'scream', label: '😱 Scream' }
+    ];
+
+    const durationOptions = [
+      { value: 30, label: '30 minutes' },
+      { value: 60, label: '1 hour' },
+      { value: 90, label: '1.5 hours' },
+      { value: 120, label: '2 hours' },
+      { value: 180, label: '3 hours' }
+    ];
+
+    function generateCode() {
+      return Math.floor(1000 + Math.random() * 9000).toString();
+    }
+
+    function formatTime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+      return m + ':' + String(s).padStart(2, '0');
+    }
+
+    function playAlarm(type) {
+      try {
+        if (!state.audioContext) {
+          state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const ctx = state.audioContext;
+
+        if (type === 'police') {
+          for (let i = 0; i < 6; i++) {
+            setTimeout(() => {
+              const o = ctx.createOscillator();
+              const g = ctx.createGain();
+              o.connect(g);
+              g.connect(ctx.destination);
+              o.frequency.value = i % 2 === 0 ? 600 : 800;
+              o.type = 'sine';
+              g.gain.setValueAtTime(0.4, ctx.currentTime);
+              g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+              o.start(ctx.currentTime);
+              o.stop(ctx.currentTime + 0.3);
+            }, i * 300);
+          }
+        } else if (type === 'tornado') {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.type = 'sine';
+          o.frequency.setValueAtTime(400, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 1);
+          o.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 2);
+          g.gain.setValueAtTime(0.4, ctx.currentTime);
+          o.start(ctx.currentTime);
+          o.stop(ctx.currentTime + 2);
+        } else if (type === 'hockey') {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.frequency.value = 200;
+          o.type = 'square';
+          g.gain.setValueAtTime(0.5, ctx.currentTime);
+          o.start(ctx.currentTime);
+          o.stop(ctx.currentTime + 1.5);
+        } else if (type === 'glass') {
+          for (let i = 0; i < 5; i++) {
+            setTimeout(() => {
+              const o = ctx.createOscillator();
+              const g = ctx.createGain();
+              o.connect(g);
+              g.connect(ctx.destination);
+              o.frequency.value = 2000 + Math.random() * 3000;
+              o.type = 'square';
+              g.gain.setValueAtTime(0.3, ctx.currentTime);
+              g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+              o.start(ctx.currentTime);
+              o.stop(ctx.currentTime + 0.1);
+            }, i * 50);
+          }
+        } else if (type === 'scream') {
+          for (let i = 0; i < 10; i++) {
+            setTimeout(() => {
+              const o = ctx.createOscillator();
+              const g = ctx.createGain();
+              o.connect(g);
+              g.connect(ctx.destination);
+              o.frequency.value = 800 + Math.random() * 400;
+              o.type = 'sawtooth';
+              g.gain.setValueAtTime(0.3, ctx.currentTime);
+              g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+              o.start(ctx.currentTime);
+              o.stop(ctx.currentTime + 0.2);
+            }, i * 100);
+          }
+        } else {
+          const freqs = [800, 600, 500, 400];
+          freqs.forEach((f, i) => {
+            setTimeout(() => {
+              const o = ctx.createOscillator();
+              const g = ctx.createGain();
+              o.connect(g);
+              g.connect(ctx.destination);
+              o.frequency.value = f;
+              o.type = 'square';
+              g.gain.setValueAtTime(0.4, ctx.currentTime);
+              g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+              o.start(ctx.currentTime);
+              o.stop(ctx.currentTime + 0.2);
+            }, i * 150);
+          });
+        }
+      } catch (e) {
+        console.error('Audio error:', e);
+      }
+    }
+
+    function createSession(username) {
+      const code = generateCode();
+      const ref = db.ref('sessions/' + code);
+      const participantData = {};
+      participantData[state.userId] = {
+        name: username,
+        busted: false,
+        bustCount: 0,
+        firstBustTime: null,
+        joinedAt: Date.now()
+      };
+
+      ref.set({
+        host: state.userId,
+        sessionType: 'duration',
+        duration: 120,
+        alarmSound: 'police',
+        status: 'setup',
+        startTime: null,
+        participants: participantData
+      });
+
+      state.groupCode = code;
+      state.username = username;
+
+      ref.on('value', (snap) => {
+        state.session = snap.val();
+        if (state.session) {
+          if (state.session.status === 'active' && (state.view === 'waiting' || state.view === 'setup')) {
+            state.view = 'ready';
+          }
+          if (state.session.status === 'complete' && state.view !== 'complete') {
+            state.view = 'complete';
+          }
+          render();
+        }
+      });
+
+      state.view = 'setup';
+      render();
+    }
+
+    function joinSession(username, code) {
+      const ref = db.ref('sessions/' + code);
+      ref.once('value').then((snap) => {
+        if (!snap.exists()) {
+          alert('Session not found!');
+          return;
+        }
+
+        ref.child('participants/' + state.userId).set({
+          name: username,
+          busted: false,
+          bustCount: 0,
+          firstBustTime: null,
+          joinedAt: Date.now()
+        });
+
+        state.groupCode = code;
+        state.username = username;
+
+        ref.on('value', (snap) => {
+          state.session = snap.val();
+          if (state.session) {
+            if (state.session.status === 'active' && (state.view === 'waiting' || state.view === 'setup')) {
+              state.view = 'ready';
+            }
+            if (state.session.status === 'complete' && state.view !== 'complete') {
+              state.view = 'complete';
+            }
+            render();
+          }
+        });
+
+        state.view = 'waiting';
+        render();
+      });
+    }
+
+    function updateSession(updates) {
+      db.ref('sessions/' + state.groupCode).update(updates);
+    }
+
+    function markBusted() {
+      const now = Date.now();
+      const elapsed = Math.floor((now - state.session.startTime) / 1000);
+      const pRef = db.ref('sessions/' + state.groupCode + '/participants/' + state.userId);
+
+      pRef.once('value').then((snap) => {
+        const p = snap.val();
+        pRef.update({
+          busted: true,
+          bustCount: (p.bustCount || 0) + 1,
+          firstBustTime: p.firstBustTime || elapsed
+        });
+
+        db.ref('sessions/' + state.groupCode + '/lastBust').set({
+          user: state.username,
+          time: now
+        });
+
+        if (state.session.sessionType === 'challenge') {
+          const all = Object.values(state.session.participants);
+          const left = all.filter(x => !x.busted).length;
+
+          if (left <= 1) {
+            setTimeout(() => updateSession({ status: 'complete' }), 2000);
+          }
+        }
+      });
+    }
+
+    function watchBusts() {
+      const ref = db.ref('sessions/' + state.groupCode + '/lastBust');
+      ref.on('value', (snap) => {
+        const bust = snap.val();
+        if (bust && bust.time > Date.now() - 2000) {
+          state.bustedUser = bust.user;
+          playAlarm(state.session.alarmSound);
+          render();
+          setTimeout(() => {
+            state.bustedUser = null;
+            render();
+          }, 3000);
+        }
+      });
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && state.view === 'active' && state.session) {
+        markBusted();
+      }
+    });
+
+    function render() {
+      const app = document.getElementById('app');
+
+      if (state.view === 'home') {
+        app.innerHTML = '<div class="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center p-4"><div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full"><div class="text-center mb-6"><div class="text-6xl mb-4">📱</div><h1 class="text-3xl font-bold text-gray-800 mb-2">Phone Away</h1><p class="text-gray-600">Stay present with friends</p></div><div class="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-6"><h3 class="font-semibold text-blue-900 mb-2">Important</h3><ul class="text-sm text-blue-800 space-y-1"><li>• Turn phone volume UP</li><li>• Lock phone when prompted</li><li>• If you unlock, everyone knows!</li></ul></div><div class="space-y-4"><input type="text" id="username" placeholder="Enter your name" class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-purple-600 focus:outline-none" /><button onclick="handleCreate()" class="w-full bg-purple-600 text-white py-4 rounded-xl font-semibold hover:bg-purple-700">Create New Session</button><div class="relative my-4"><div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-300"></div></div><div class="relative flex justify-center text-sm"><span class="px-4 bg-white text-gray-500">or join existing</span></div></div><input type="text" id="joinCode" placeholder="4-digit code" maxlength="4" class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-center text-2xl" /><button onclick="handleJoin()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-semibold hover:bg-blue-700">Join Session</button></div></div></div>';
+      } else if (state.view === 'setup' || state.view === 'waiting') {
+        renderSetup();
+      } else if (state.view === 'ready') {
+        const dur = state.session.sessionType === 'duration' ? 'Duration: ' + durationOptions.find(d => d.value === state.session.duration).label : 'Challenge: Last one wins!';
+        app.innerHTML = '<div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-600 to-purple-600"><div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center"><div class="text-6xl mb-6">📱</div><h2 class="text-3xl font-bold text-gray-800 mb-4">Ready?</h2><p class="text-gray-600 mb-2 text-lg">Tap Ready, then lock in 5 seconds</p><p class="text-sm text-gray-500 mb-8">' + dur + '</p><button onclick="handleReady()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-semibold text-xl">I am Ready!</button></div></div>';
+      } else if (state.view === 'countdown') {
+        app.innerHTML = '<div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-orange-500 to-red-600"><div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center"><div class="text-6xl mb-6">🔒</div><h2 class="text-3xl font-bold text-gray-800 mb-4">Lock Your Phone!</h2><div class="text-9xl font-bold text-orange-600 mb-6">' + state.countdown + '</div><p class="text-gray-600 text-lg">' + (state.countdown > 0 ? 'Press lock button now!' : 'Starting...') + '</p></div></div>';
+      } else if (state.view === 'active') {
+        renderActive();
+      } else if (state.view === 'complete') {
+        renderComplete();
+      }
+    }
+
+    function renderSetup() {
+      const app = document.getElementById('app');
+      const parts = state.session ? Object.values(state.session.participants) : [];
+      const isHost = state.session && state.session.host === state.userId;
+      const isWaiting = state.view === 'waiting';
+
+      let html = '<div class="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center p-4"><div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full"><div class="text-center mb-6"><h2 class="text-2xl font-bold text-gray-800 mb-2">Session ' + (isWaiting ? 'Joined' : 'Setup') + '</h2><div class="bg-purple-100 rounded-2xl p-4 mb-4"><div class="text-sm text-gray-600 mb-1">Group Code</div><div class="text-5xl font-bold text-purple-600">' + state.groupCode + '</div></div></div>';
+
+      if (isHost && !isWaiting) {
+        html += '<div class="space-y-6 mb-6"><div><label class="block text-sm font-semibold text-gray-700 mb-2">Session Type</label><div class="grid grid-cols-2 gap-3"><button onclick="updateSession({sessionType:\'duration\'})" class="p-4 rounded-xl border-2 ' + (state.session.sessionType === 'duration' ? 'border-purple-600 bg-purple-50' : 'border-gray-300') + '"><div class="text-3xl mb-2">⏱️</div><div class="font-semibold">Duration</div></button><button onclick="updateSession({sessionType:\'challenge\'})" class="p-4 rounded-xl border-2 ' + (state.session.sessionType === 'challenge' ? 'border-purple-600 bg-purple-50' : 'border-gray-300') + '"><div class="text-3xl mb-2">🏆</div><div class="font-semibold">Challenge</div></button></div></div>';
+
+        if (state.session.sessionType === 'duration') {
+          html += '<div><label class="block text-sm font-semibold text-gray-700 mb-2">Duration</label><select onchange="updateSession({duration:parseInt(this.value)})" class="w-full px-4 py-3 border-2 rounded-xl">';
+          durationOptions.forEach(opt => {
+            html += '<option value="' + opt.value + '" ' + (state.session.duration === opt.value ? 'selected' : '') + '>' + opt.label + '</option>';
+          });
+          html += '</select></div>';
+        }
+
+        html += '<div><label class="block text-sm font-semibold text-gray-700 mb-2">Alarm</label><select onchange="updateSession({alarmSound:this.value})" class="w-full px-4 py-3 border-2 rounded-xl">';
+        alarmOptions.forEach(opt => {
+          html += '<option value="' + opt.value + '" ' + (state.session.alarmSound === opt.value ? 'selected' : '') + '>' + opt.label + '</option>';
+        });
+        html += '</select><button onclick="playAlarm(\'' + state.session.alarmSound + '\')" class="mt-2 w-full bg-gray-100 py-2 rounded-lg text-sm">Test Sound</button></div></div>';
+      }
+
+      html += '<div class="mb-6"><h3 class="text-sm font-semibold text-gray-600 mb-3">Participants (' + parts.length + ')</h3><div class="space-y-2">';
+      parts.forEach(p => {
+        html += '<div class="bg-gray-100 rounded-lg px-4 py-2 flex items-center"><div class="w-2 h-2 bg-green-500 rounded-full mr-3"></div><span>' + p.name + '</span>' + (p.name === state.username ? '<span class="ml-auto text-xs text-gray-500">(You)</span>' : '') + '</div>';
+      });
+      html += '</div></div>';
+
+      if (isHost && !isWaiting) {
+        html += '<button onclick="updateSession({status:\'active\'})" class="w-full bg-purple-600 text-white py-4 rounded-xl font-semibold">Start Session</button>';
+      } else {
+        html += '<div class="text-center text-gray-600">Waiting for host...</div>';
+      }
+
+      html += '</div></div>';
+      app.innerHTML = html;
+    }
+
+    function renderActive() {
+      const app = document.getElementById('app');
+      const parts = state.session ? Object.values(state.session.participants) : [];
+      const isHost = state.session && state.session.host === state.userId;
+
+      if (state.bustedUser) {
+        const msg = state.bustedUser === state.username ? 'You unlocked your phone!' : state.bustedUser + ' unlocked their phone!';
+        app.innerHTML = '<div class="min-h-screen bg-gradient-to-br from-green-600 to-teal-600 flex items-center justify-center p-4"><div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center"><div class="text-6xl mb-6 animate-pulse">🚨</div><h2 class="text-3xl font-bold text-red-600 mb-4">BUSTED!</h2><p class="text-xl mb-6">' + msg + '</p><div class="bg-red-100 rounded-2xl p-6"><p>Keep it locked!</p></div></div></div>';
+        return;
+      }
+
+      let info = '';
+      if (state.session.sessionType === 'duration') {
+        info = '<div class="text-sm text-gray-600 mb-2">Time Left</div><div class="text-4xl font-bold text-green-600 mb-4" id="timer">' + formatTime(state.timeRemaining) + '</div>';
+      } else {
+        const stillStanding = parts.filter(p => !p.busted).length;
+        info = '<div class="text-sm text-gray-600 mb-2">Challenge Mode</div><div class="text-2xl font-bold text-green-600 mb-4">' + stillStanding + ' Still Standing</div>';
+      }
+
+      let html = '<div class="min-h-screen bg-gradient-to-br from-green-600 to-teal-600 flex items-center justify-center p-4"><div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center"><div class="text-6xl mb-4">🏆</div><h2 class="text-2xl font-bold mb-2">Session Active</h2><div class="bg-green-100 rounded-2xl p-6 mb-6">' + info + '<p class="text-sm mb-3">Keep locked!</p><div class="text-2xl font-bold">' + state.groupCode + '</div></div><div class="mb-6"><h3 class="text-sm font-semibold text-gray-600 mb-3">Status</h3><div class="space-y-2">';
+
+      parts.forEach(p => {
+        html += '<div class="rounded-lg px-4 py-2 flex items-center ' + (p.busted ? 'bg-red-100' : 'bg-green-100') + '"><div class="w-2 h-2 rounded-full mr-3 ' + (p.busted ? 'bg-red-500' : 'bg-green-500') + '"></div><span>' + p.name + '</span><span class="ml-auto text-xs">' + (p.busted ? 'Busted!' : '✓') + '</span></div>';
+      });
+
+      html += '</div></div>';
+      if (isHost) html += '<button onclick="updateSession({status:\'complete\'})" class="w-full bg-gray-200 py-3 rounded-xl font-semibold">End Early</button>';
+      html += '</div></div>';
+      app.innerHTML = html;
+    }
+
+    function renderComplete() {
+      const app = document.getElementById('app');
+      const parts = state.session ? Object.values(state.session.participants) : [];
+
+      if (state.session.sessionType === 'duration') {
+        const sorted = parts.slice().sort((a, b) => a.bustCount - b.bustCount);
+        const winners = parts.filter(p => !p.busted);
+        const best = sorted[0];
+        const worst = sorted[sorted.length - 1];
+
+        let html = '<div class="min-h-screen bg-gradient-to-br from-green-600 to-teal-600 flex items-center justify-center p-4"><div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full"><div class="text-center mb-6"><div class="text-6xl mb-4">🏆</div><h2 class="text-3xl font-bold mb-2">Complete!</h2></div>';
+
+        if (winners.length > 0) {
+          html += '<div class="mb-6"><h3 class="text-lg font-bold text-green-700 mb-3">Perfect</h3>';
+          winners.forEach(w => {
+            html += '<div class="bg-green-100 rounded-lg px-4 py-3 flex items-center mb-2"><div class="text-2xl mr-3">🏆</div><span class="font-semibold">' + w.name + '</span><span class="ml-auto text-sm">Never unlocked!</span></div>';
+          });
+          html += '</div>';
+        }
+
+        html += '<div class="bg-blue-50 rounded-xl p-4 mb-6"><h3 class="text-sm font-semibold mb-3">Stats</h3>';
+        if (best.bustCount > 0) {
+          html += '<div class="mb-3"><div class="text-xs text-gray-600">Best</div><div class="flex justify-between"><span>' + best.name + '</span><span class="text-green-600">' + best.bustCount + ' unlocks</span></div></div>';
+        }
+        if (worst.bustCount > 0 && worst.name !== best.name) {
+          html += '<div><div class="text-xs text-gray-600">Most Tempted</div><div class="flex justify-between"><span>' + worst.name + '</span><span class="text-red-600">' + worst.bustCount + ' unlocks</span></div></div>';
+        }
+        html += '</div><button onclick="location.reload()" class="w-full bg-purple-600 text-white py-4 rounded-xl font-semibold">New Session</button></div></div>';
+        app.innerHTML = html;
+      } else {
+        const sorted = parts.slice().sort((a, b) => {
+          if (!a.busted && !b.busted) return 0;
+          if (!a.busted) return 1;
+          if (!b.busted) return -1;
+          return (b.firstBustTime || 0) - (a.firstBustTime || 0);
+        }).reverse();
+
+        const winner = sorted[0];
+
+        let html = '<div class="min-h-screen bg-gradient-to-br from-green-600 to-teal-600 flex items-center justify-center p-4"><div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full"><div class="text-center mb-6"><div class="text-6xl mb-4">🏆</div><h2 class="text-3xl font-bold mb-2">Challenge Complete!</h2></div><div class="bg-gradient-to-r from-yellow-100 to-yellow-200 rounded-xl p-6 mb-6 border-4 border-yellow-400 text-center"><div class="text-5xl mb-2">👑</div><h3 class="text-2xl font-bold text-yellow-900">' + winner.name + '</h3><p class="text-yellow-700 font-semibold">WINNER!</p>';
+
+        if (winner.busted && winner.firstBustTime) {
+          html += '<p class="text-sm text-yellow-800 mt-2">Lasted ' + formatTime(winner.firstBustTime) + '</p>';
+        }
+
+        html += '</div><div class="bg-gray-50 rounded-xl p-4 mb-6"><h3 class="text-sm font-semibold mb-3">Final Standings</h3>';
+
+        sorted.forEach((p, i) => {
+          const bg = i === 0 ? 'bg-yellow-100 border-2 border-yellow-400' : 'bg-white';
+          const badgeColor = i === 0 ? 'bg-yellow-400 text-yellow-900' : i === 1 ? 'bg-gray-300' : i === 2 ? 'bg-orange-300' : 'bg-gray-200';
+          html += '<div class="flex items-center justify-between p-3 rounded-lg mb-2 ' + bg + '"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center font-bold ' + badgeColor + '">' + (i + 1) + '</div><span class="font-semibold">' + p.name + '</span></div>';
+          if (p.busted) {
+            html += '<span class="text-sm">' + formatTime(p.firstBustTime || 0) + '</span>';
+          } else {
+            html += '<span class="text-sm font-semibold text-green-600">Never unlocked</span>';
+          }
+          html += '</div>';
+        });
+
+        html += '</div><button onclick="location.reload()" class="w-full bg-purple-600 text-white py-4 rounded-xl font-semibold">New Session</button></div></div>';
+        app.innerHTML = html;
+      }
+    }
+
+    window.handleCreate = function() {
+      const u = document.getElementById('username').value.trim();
+      if (!u) return alert('Enter your name');
+      createSession(u);
+    };
+
+    window.handleJoin = function() {
+      const u = document.getElementById('username').value.trim();
+      const c = document.getElementById('joinCode').value.trim();
+      if (!u || c.length !== 4) return alert('Enter name and 4-digit code');
+      joinSession(u, c);
+    };
+
+    window.handleReady = function() {
+      state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      updateSession({ startTime: Date.now() });
+      watchBusts();
+
+      state.view = 'countdown';
+      state.countdown =
