@@ -13,7 +13,6 @@
   <div id="app"></div>
 
   <script>
-    // Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyBCiTEYtzDQAtbaPJH73xf6Onrl6PeyNBY",
       authDomain: "phone-away-2525f.firebaseapp.com",
@@ -358,7 +357,6 @@
       html += '</div></div>';
       app.innerHTML = html;
     }
-
     function renderActive() {
       const app = document.getElementById('app');
       const parts = state.session ? Object.values(state.session.participants) : [];
@@ -473,31 +471,36 @@
       watchBusts();
 
       state.view = 'countdown';
-      state.countdown =
-const interval = setInterval(() => {
-    state.countdown--;
-    render();
-
-    if (state.countdown <= 0) {
-      clearInterval(interval);
-      state.view = 'active';
-
-      if (state.session.sessionType === 'duration') {
-        state.timeRemaining = state.session.duration * 60;
-        const timer = setInterval(() => {
-          state.timeRemaining--;
-          const el = document.getElementById('timer');
-          if (el) el.textContent = formatTime(state.timeRemaining);
-          if (state.timeRemaining <= 0) {
-            clearInterval(timer);
-            updateSession({ status: 'complete' });
-          }
-        }, 1000);
-      }
-
+      state.countdown = 5;
       render();
-    }
-  }, 1000);
-};
 
-render();
+      const interval = setInterval(() => {
+        state.countdown--;
+        render();
+
+        if (state.countdown <= 0) {
+          clearInterval(interval);
+          state.view = 'active';
+
+          if (state.session.sessionType === 'duration') {
+            state.timeRemaining = state.session.duration * 60;
+            const timer = setInterval(() => {
+              state.timeRemaining--;
+              const el = document.getElementById('timer');
+              if (el) el.textContent = formatTime(state.timeRemaining);
+              if (state.timeRemaining <= 0) {
+                clearInterval(timer);
+                updateSession({ status: 'complete' });
+              }
+            }, 1000);
+          }
+
+          render();
+        }
+      }, 1000);
+    };
+
+    render();
+  </script>
+</body>
+</html>
